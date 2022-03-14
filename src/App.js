@@ -2,6 +2,7 @@ import stickProgrammer from './stick-programmer.png';
 import './App.css';
 import React from "react";
 
+const frameRate = 25;
 
 function renderTicket(params) {
  return <div className={"ticket"} key={params.number}>
@@ -140,7 +141,7 @@ class App extends React.Component{
         setInterval(() =>
         {
             this.doSimulationStep();
-        }, 500)
+        }, Math.round(1000.0 / frameRate))
     }
 
 
