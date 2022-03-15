@@ -95,7 +95,8 @@ function renderStatistics(title, value, digits) {
 function renderWorkCenterStatistics(params) {
     return [
         renderStatistics(`${params.name} cumulative utilization rate`, (100 * params.utilizedFrames / params.totalWorkerFrames)),
-        renderStatistics(`${params.name} cumulative throughput`, (params.completedTickets / params.totalFrames), 2)
+        renderStatistics(`${params.name} cumulative throughput`, (params.completedTickets / params.totalFrames), 2),
+        renderStatistics(`${params.name} queue length`, (params.queuedTickets.length), 0)
     ];
 }
 
@@ -489,15 +490,6 @@ class App extends React.Component{
 
             <div className={"statistics-area"}>
                 {
-                    this.state.workCenters.map((workCenter, workCenterIndex) => {
-                        if (!workCenter.speed) {
-                            return null;
-                        }
-
-                        return renderWorkCenterStatistics(workCenter, workCenterIndex);
-                    })
-                }
-                {
                     renderStatistics("End to End Throughput", this.state.totalCompleted / this.state.totalFrames, 2)
                 }
                 {
@@ -511,6 +503,15 @@ class App extends React.Component{
                 }
                 {
                     renderStatistics("Queue Time", this.computeAverageTicketStatistic('queueTime'))
+                }
+                {
+                    this.state.workCenters.map((workCenter, workCenterIndex) => {
+                        if (!workCenter.speed) {
+                            return null;
+                        }
+
+                        return renderWorkCenterStatistics(workCenter, workCenterIndex);
+                    })
                 }
             </div>
 
