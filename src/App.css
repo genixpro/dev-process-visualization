@@ -129,6 +129,9 @@ body {
 .single-ticket-completion-qa {
   background-color: blue;
 }
+.single-ticket-completion-devops {
+  background-color: green;
+}
 
 .controls-area {
   display: flex;
@@ -148,6 +151,7 @@ body {
 
 .statistics-area {
   display: flex;
+  flex-wrap: wrap;
   flex-direction: row;
   margin: 20px;
   border: 1px solid white;

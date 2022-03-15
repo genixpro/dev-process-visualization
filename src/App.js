@@ -95,7 +95,7 @@ function renderStatistics(title, value, digits) {
 function renderWorkCenterStatistics(params) {
     return [
         renderStatistics(`${params.name} cumulative utilization rate`, (100 * params.utilizedFrames / params.totalWorkerFrames)),
-        renderStatistics(`${params.name} cumulative throughput`, (params.completedTickets / params.totalFrames), 2),
+        renderStatistics(`${params.name} cumulative throughput`, (10 * params.completedTickets / params.totalFrames)),
         renderStatistics(`${params.name} queue length`, (params.queuedTickets.length), 0)
     ];
 }
@@ -114,9 +114,12 @@ class App extends React.Component{
         shiftResources: false,
         devs: 3,
         qa: 3,
+        devops: 3,
         dev_randomness: 90,
         qa_randomness: 90,
+        devops_randomness: 90,
         enableQA: true,
+        enableDevops: false,
     }
 
     componentDidMount() {
@@ -136,15 +139,21 @@ class App extends React.Component{
                 ticket: null,
             });
         }
+        let devopsWorkers = [];
+        for (let num = 0; num < config.devops; num += 1) {
+            devopsWorkers.push({
+                ticket: null,
+            });
+        }
         let devWorkCenter = {
             name: "dev",
-            next: "qa",
+            next: null,
             queueName: "backlog",
             workerName: "developers",
             speed: 10,
             createNew: true,
             active: true,
-            shiftResourcesTo: config.shiftResources ? "qa" : null,
+            shiftResourcesTo: null,
             limitWIP: config.limitWIP,
             queuedTickets: [],
             workers: devWorkers,
@@ -153,15 +162,32 @@ class App extends React.Component{
             totalFrames: 0,
             completedTickets: 0
         };
+        let devOpsWorkCenter = {
+            name: "devops",
+            next: null,
+            queueName: "devops queue",
+            workerName: "devops engineers",
+            speed: 10,
+            createNew: false,
+            active: true,
+            shiftResourcesTo: null,
+            limitWIP: config.limitWIP,
+            queuedTickets: [],
+            workers: devopsWorkers,
+            utilizedFrames: 0,
+            totalWorkerFrames: 0,
+            totalFrames: 0,
+            completedTickets: 0
+        };
         let qaWorkCenter = {
             name: "qa",
-            next: "completed",
+            next: null,
             queueName: "testing queue",
             workerName: "qa team",
             speed: 10,
             createNew: false,
             active: true,
-            shiftResourcesTo: config.shiftResources ? "dev" : null,
+            shiftResourcesTo: null,
             limitWIP: false,
             queuedTickets: [],
             workers: qaWorkers,
@@ -187,23 +213,38 @@ class App extends React.Component{
             completedTickets: 0
         }
 
-        let workCenters;
-        if (config.enableQA) {
-            workCenters = [
-                devWorkCenter,
-                qaWorkCenter,
-                completedWorkCenter,
-            ];
-        } else {
-            devWorkCenter.next = "completed";
-            devWorkCenter.speed = devWorkCenter.speed / 2;
-            devWorkCenter.shiftResourcesTo = null;
+        let workCenters = [
+            devWorkCenter,
+        ];
 
-            workCenters = [
-                devWorkCenter,
-                completedWorkCenter,
-            ];
+        if (config.enableDevops) {
+            workCenters.push(devOpsWorkCenter);
         }
+
+        if (config.enableQA) {
+            workCenters.push(qaWorkCenter);
+        } else {
+            devWorkCenter.speed = devWorkCenter.speed / 2;
+        }
+
+        workCenters.push(completedWorkCenter);
+
+        workCenters.forEach((workCenter, workCenterIndex) =>
+        {
+            if (workCenterIndex < (workCenters.length - 1)) {
+                workCenter.next = workCenters[workCenterIndex + 1].name;
+            }
+
+            if (config.shiftResourcesTo) {
+                if (workCenterIndex < (workCenters.length - 2)) {
+                    workCenter.shiftResourcesTo = workCenter.next;
+                } else {
+                    workCenter.shiftResourcesTo = workCenters[workCenterIndex - 1].name;
+                }
+            } else {
+                workCenter.shiftResourcesTo = null;
+            }
+        })
 
         this.setState({
             config,
@@ -462,6 +503,17 @@ class App extends React.Component{
                         aria-label="Randomness" onChange={(evt) => this.changeConfiguration({qa_randomness: evt.target.value})}
                     />
                 </Box>
+                <Box width={300}>
+                    <span className={"slider-label"}>DevOps Randomness</span>
+                    <Slider
+                        marks
+                        min={0}
+                        step={10}
+                        max={100}
+                        defaultValue={this.defaultConfiguration.devops_randomness}
+                        aria-label="Randomness" onChange={(evt) => this.changeConfiguration({devops_randomness: evt.target.value})}
+                    />
+                </Box>
                 <FormGroup>
                     <FormControlLabel
                         className={"checkbox-control"}
@@ -482,6 +534,14 @@ class App extends React.Component{
                     <FormControlLabel
                         className={"checkbox-control"}
                         control={<Checkbox />}
+                        label="Enable separate devops team"
+                        onChange={(evt) => this.changeConfiguration({enableDevops: evt.target.checked}) }
+                    />
+                </FormGroup>
+                <FormGroup>
+                    <FormControlLabel
+                        className={"checkbox-control"}
+                        control={<Checkbox />}
                         label="Shift Resources Between Teams"
                         onChange={(evt) => this.changeConfiguration({shiftResources: evt.target.checked}) }
                     />
@@ -490,7 +550,7 @@ class App extends React.Component{
 
             <div className={"statistics-area"}>
                 {
-                    renderStatistics("End to End Throughput", this.state.totalCompleted / this.state.totalFrames, 2)
+                    renderStatistics("End to End Throughput", 10 * this.state.totalCompleted / this.state.totalFrames)
                 }
                 {
                     renderStatistics("End to End Time", this.computeAverageTicketStatistic('endToEndTime'))
