@@ -129,6 +129,7 @@ body {
 .controls-area {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   margin: 20px;
   border: 1px solid white;
 }
@@ -153,4 +154,8 @@ body {
   display: flex;
   flex-direction: column;
   margin: 20px;
+}
+
+.checkbox-control {
+  color: white;
 }

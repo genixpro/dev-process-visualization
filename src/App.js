@@ -3,6 +3,10 @@ import './App.css';
 import React from "react";
 import Slider from '@mui/material/Slider';
 import Box from '@mui/material/Box';
+import FormGroup from '@mui/material/FormGroup';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
+import _ from "lodash";
 
 function renderTicket(params) {
  return <div className={"ticket"} key={params.number}>
@@ -12,7 +16,7 @@ function renderTicket(params) {
      <div className={"ticket-completion-box"}>
          {
              Object.keys(params.completion).map((completionKey) => {
-                 return <div className={"single-ticket-completion-box"}>
+                 return <div className={"single-ticket-completion-box"} key={completionKey}>
                             <div className={`single-ticket-completion single-ticket-completion-${completionKey}`} key={completionKey}
                                   style={({
                                       top: `${params.completion[completionKey]}%`,
@@ -52,7 +56,8 @@ function renderWorkCenter(params, workCenterIndex) {
                                         style={({
                                             top: `${worker.top}vh`,
                                             left: `${worker.left}vw`
-                                        })}>
+                                        })}
+                                        key={workerIndex}>
 
                                 <div className={"worker-ticket-box"}>
                                     {
@@ -77,10 +82,10 @@ function renderWorkCenter(params, workCenterIndex) {
 }
 
 
-function renderStatistics(title, value) {
+function renderStatistics(title, value, digits) {
     return <div className={"single-statistic"} key={title}>
         <span>{title}</span>
-        <span>{value ? value.toFixed(1) : null}</span>
+        <span>{value ? value.toFixed(digits ?? 1) : null}</span>
     </div>
 }
 
@@ -99,10 +104,12 @@ class App extends React.Component{
 
     defaultConfiguration = {
         framerate: 10,
+        limitWIP: false,
         devs: 3,
         qa: 3,
         dev_randomness: 50,
-        qa_randomness: 50
+        qa_randomness: 50,
+        enableQA: true,
     }
 
     componentDidMount() {
@@ -122,45 +129,64 @@ class App extends React.Component{
                 ticket: null,
             });
         }
+        let devWorkCenter = {
+            name: "dev",
+            next: "qa",
+            speed: 10,
+            createNew: true,
+            active: true,
+            limitWIP: config.limitWIP,
+            queuedTickets: [],
+            workers: devWorkers,
+            utilizedFrames: 1,
+            totalFrames: 1
+        };
+        let qaWorkCenter = {
+            name: "qa",
+            next: "completed",
+            speed: 10,
+            createNew: false,
+            active: true,
+            limitWIP: false,
+            queuedTickets: [],
+            workers: qaWorkers,
+            utilizedFrames: 1,
+            totalFrames: 1
+        };
+        let completedWorkCenter = {
+            name: "completed",
+            next: null,
+            speed: 0,
+            createNew: false,
+            active: false,
+            limitWIP: false,
+            queuedTickets: [],
+            workers: [],
+            utilizedFrames: 1,
+            totalFrames: 1
+        }
+
+        let workCenters;
+        if (config.enableQA) {
+            workCenters = [
+                devWorkCenter,
+                qaWorkCenter,
+                completedWorkCenter,
+            ];
+        } else {
+            devWorkCenter.next = "completed";
+            devWorkCenter.speed = devWorkCenter.speed / 2;
+
+            workCenters = [
+                devWorkCenter,
+                completedWorkCenter,
+            ];
+        }
 
         this.setState({
             config,
             newTicketNumber: 0,
-            workCenters: [
-                {
-                    name: "dev",
-                    next: "qa",
-                    speed: 20,
-                    createNew: true,
-                    active: true,
-                    queuedTickets: [],
-                    workers: devWorkers,
-                    utilizedFrames: 1,
-                    totalFrames: 1
-                },
-                {
-                    name: "qa",
-                    next: "completed",
-                    speed: 20,
-                    createNew: false,
-                    active: true,
-                    queuedTickets: [],
-                    workers: qaWorkers,
-                    utilizedFrames: 1,
-                    totalFrames: 1
-                },
-                {
-                    name: "completed",
-                    next: null,
-                    speed: 0,
-                    createNew: false,
-                    active: false,
-                    queuedTickets: [],
-                    workers: [],
-                    utilizedFrames: 1,
-                    totalFrames: 1
-                }
-            ]
+            workCenters
         });
 
         this.setFrameRate(this.state.frameRate ?? this.defaultConfiguration.framerate);
@@ -201,9 +227,12 @@ class App extends React.Component{
             transitioningTickets[workCenter.name] = [];
         });
 
-        // Increase lead time on all queued tickets
+        // Increase end to end time and queue time on all queued tickets
         newState.workCenters = newState.workCenters.map((workCenter) => {
             if (!workCenter.active) {
+                return workCenter;
+            }
+            if (workCenter.createNew) {
                 return workCenter;
             }
 
@@ -212,7 +241,8 @@ class App extends React.Component{
                 queuedTickets: workCenter.queuedTickets.map((ticket) => {
                     return {
                         ...ticket,
-                        leadTime: ticket.leadTime + 1
+                        endToEndTime: ticket.endToEndTime + 1,
+                        queueTime: ticket.queueTime + 1
                     }
                 })
             }
@@ -232,7 +262,9 @@ class App extends React.Component{
                 if (worker.ticket) {
                     const newTicket = {
                         ...worker.ticket,
-                        leadTime: worker.ticket.leadTime + 1,
+                        endToEndTime: worker.ticket.endToEndTime + 1,
+                        touchTime: worker.ticket.touchTime + 1,
+                        queueTime: worker.ticket.queueTime,
                         completion: {
                           ...worker.ticket.completion,
                           [workCenter.name]: worker.ticket.completion[workCenter.name] + workCenter.speed
@@ -256,7 +288,12 @@ class App extends React.Component{
                         }
                     }
                 } else {
-                    if (queuedTickets.length > 0) {
+                    let nextWorkCenter = null;
+                    if (workCenter.next) {
+                        nextWorkCenter = _.find(newState.workCenters, {name: workCenter.next});
+                    }
+
+                    if (queuedTickets.length > 0 && (!workCenter.limitWIP || (nextWorkCenter && nextWorkCenter.queuedTickets.length < 10))) {
                         const newTicket = queuedTickets.shift();
                         utilizedFrames += 1;
                         return {
@@ -298,14 +335,22 @@ class App extends React.Component{
             if (workCenter.createNew) {
                 while (queuedTickets.length < 15) {
                     newState.newTicketNumber += 1;
+
+                    const completion = {};
+
+                    newState.workCenters.forEach((workCenterForInitialVal) => {
+                        if (workCenterForInitialVal.active) {
+                            completion[workCenterForInitialVal.name] = Math.round(50 + ((Math.random() - 0.5) * this.state.config[workCenterForInitialVal.name + "_randomness"]))
+                        }
+                    });
+
                     queuedTickets.push(
                         {
                             number: `BAC-${newState.newTicketNumber}`,
-                            leadTime: 0,
-                            completion: {
-                                dev: Math.round(50 + ((Math.random() - 0.5) * this.state.config["dev_randomness"])),
-                                qa: Math.round(50 + ((Math.random() - 0.5) * this.state.config["qa_randomness"]))
-                            },
+                            endToEndTime: 0,
+                            touchTime: 0,
+                            queueTime: 0,
+                            completion: completion
                         });
                 }
             }
@@ -319,7 +364,7 @@ class App extends React.Component{
         this.setState(newState);
     }
 
-    computeLeadTimeStatistic() {
+    computeAverageTicketStatistic(variable) {
         let total = 0;
         let count = 0;
         let completedWorkCenter = null;
@@ -333,9 +378,9 @@ class App extends React.Component{
             return null;
         }
 
-        for (let x = 0; x < Math.min(completedWorkCenter.queuedTickets.length, 25); x += 1) {
+        for (let x = 0; x < Math.min(completedWorkCenter.queuedTickets.length, 50); x += 1) {
             const ticket = completedWorkCenter.queuedTickets[completedWorkCenter.queuedTickets.length - (x + 1)];
-            total += ticket.leadTime;
+            total += ticket[variable];
             count += 1;
         }
         if (count > 0) {
@@ -406,6 +451,22 @@ class App extends React.Component{
                         aria-label="Randomness" onChange={(evt) => this.changeConfiguration({qa_randomness: evt.target.value})}
                     />
                 </Box>
+                <FormGroup>
+                    <FormControlLabel
+                        className={"checkbox-control"}
+                        control={<Checkbox />}
+                        label="Kanban style (wait for next queue to be less then 10)"
+                        onChange={(evt) => this.changeConfiguration({limitWIP: evt.target.checked}) }
+                    />
+                </FormGroup>
+                <FormGroup>
+                    <FormControlLabel
+                        className={"checkbox-control"}
+                        control={<Checkbox defaultChecked />}
+                        label="Enable separate QA team"
+                        onChange={(evt) => this.changeConfiguration({enableQA: evt.target.checked}) }
+                    />
+                </FormGroup>
             </div>
 
             <div className={"work-centers-area"}>
@@ -426,9 +487,18 @@ class App extends React.Component{
                             return renderWorkCenterStatistics(workCenter, workCenterIndex);
                         })
                     }
-                    {
-                        renderStatistics("Lead Time", this.computeLeadTimeStatistic())
-                    }
+                {
+                    renderStatistics("End to End Time", this.computeAverageTicketStatistic('endToEndTime'))
+                }
+                {
+                    renderStatistics("Touch Time", this.computeAverageTicketStatistic('touchTime'))
+                }
+                {
+                    renderStatistics("Touch Time Ratio", this.computeAverageTicketStatistic('touchTime') / this.computeAverageTicketStatistic('endToEndTime'), 2)
+                }
+                {
+                    renderStatistics("Queue Time", this.computeAverageTicketStatistic('queueTime'))
+                }
             </div>
         </div>
     );
