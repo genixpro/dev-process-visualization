@@ -482,6 +482,17 @@ class App extends React.Component{
                     />
                 </Box>
                 <Box width={300}>
+                    <span className={"slider-label"}>DevOps People</span>
+                    <Slider
+                        marks
+                        min={1}
+                        step={1}
+                        max={4}
+                        defaultValue={this.defaultConfiguration.devops}
+                        aria-label="QA People" onChange={(evt) => this.changeConfiguration({devops: evt.target.value})}
+                    />
+                </Box>
+                <Box width={300}>
                     <span className={"slider-label"}>Dev Randomness</span>
                     <Slider
                         marks
