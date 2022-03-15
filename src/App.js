@@ -93,7 +93,10 @@ function renderStatistics(title, value, digits) {
 
 
 function renderWorkCenterStatistics(params) {
-    return renderStatistics(`${params.name} cumulative utilization rate`, (100 * params.utilizedFrames / params.totalFrames));
+    return [
+        renderStatistics(`${params.name} cumulative utilization rate`, (100 * params.utilizedFrames / params.totalWorkerFrames)),
+        renderStatistics(`${params.name} cumulative throughput`, (params.completedTickets / params.totalFrames), 2)
+    ];
 }
 
 
@@ -107,6 +110,7 @@ class App extends React.Component{
     defaultConfiguration = {
         framerate: 5,
         limitWIP: false,
+        shiftResources: false,
         devs: 3,
         qa: 3,
         dev_randomness: 90,
@@ -139,11 +143,14 @@ class App extends React.Component{
             speed: 10,
             createNew: true,
             active: true,
+            shiftResourcesTo: config.shiftResources ? "qa" : null,
             limitWIP: config.limitWIP,
             queuedTickets: [],
             workers: devWorkers,
-            utilizedFrames: 1,
-            totalFrames: 1
+            utilizedFrames: 0,
+            totalWorkerFrames: 0,
+            totalFrames: 0,
+            completedTickets: 0
         };
         let qaWorkCenter = {
             name: "qa",
@@ -153,11 +160,14 @@ class App extends React.Component{
             speed: 10,
             createNew: false,
             active: true,
+            shiftResourcesTo: config.shiftResources ? "dev" : null,
             limitWIP: false,
             queuedTickets: [],
             workers: qaWorkers,
-            utilizedFrames: 1,
-            totalFrames: 1
+            utilizedFrames: 0,
+            totalWorkerFrames: 0,
+            totalFrames: 0,
+            completedTickets: 0
         };
         let completedWorkCenter = {
             name: "completed",
@@ -170,8 +180,10 @@ class App extends React.Component{
             limitWIP: false,
             queuedTickets: [],
             workers: [],
-            utilizedFrames: 1,
-            totalFrames: 1
+            utilizedFrames: 0,
+            totalWorkerFrames: 0,
+            totalFrames: 0,
+            completedTickets: 0
         }
 
         let workCenters;
@@ -184,6 +196,7 @@ class App extends React.Component{
         } else {
             devWorkCenter.next = "completed";
             devWorkCenter.speed = devWorkCenter.speed / 2;
+            devWorkCenter.shiftResourcesTo = null;
 
             workCenters = [
                 devWorkCenter,
@@ -194,6 +207,8 @@ class App extends React.Component{
         this.setState({
             config,
             newTicketNumber: 0,
+            totalCompleted: 0,
+            totalFrames: 0,
             workCenters
         });
 
@@ -228,6 +243,8 @@ class App extends React.Component{
         const newState = {
             newTicketNumber: this.state.newTicketNumber,
             workCenters: this.state.workCenters,
+            totalCompleted: this.state.totalCompleted,
+            totalFrames: this.state.totalFrames + 1,
         };
 
         const transitioningTickets = {};
@@ -235,8 +252,13 @@ class App extends React.Component{
             transitioningTickets[workCenter.name] = [];
         });
 
+        const transitioningWorkers = {};
+        newState.workCenters.forEach((workCenter) => {
+            transitioningWorkers[workCenter.name] = [];
+        });
+
         // Increase end to end time and queue time on all queued tickets
-        newState.workCenters = newState.workCenters.map((workCenter) => {
+        newState.workCenters.forEach((workCenter) => {
             if (!workCenter.active) {
                 return workCenter;
             }
@@ -244,100 +266,85 @@ class App extends React.Component{
                 return workCenter;
             }
 
-            return {
-                ...workCenter,
-                queuedTickets: workCenter.queuedTickets.map((ticket) => {
-                    return {
-                        ...ticket,
-                        endToEndTime: ticket.endToEndTime + 1,
-                        queueTime: ticket.queueTime + 1
-                    }
-                })
-            }
+            workCenter.queuedTickets.forEach((ticket) => {
+                ticket.endToEndTime += 1;
+                ticket.queueTime += 1;
+            });
         });
 
-        newState.workCenters = newState.workCenters.map((workCenter) => {
+        newState.workCenters.forEach((workCenter) => {
             if (!workCenter.active) {
-                return workCenter;
+                return;
             }
 
-            const queuedTickets = workCenter.queuedTickets;
-            let utilizedFrames = workCenter.utilizedFrames;
-            let totalFrames = workCenter.totalFrames;
+            workCenter.totalFrames += 1;
 
-            const workers = workCenter.workers.map((worker) => {
-                totalFrames += 1;
+            const keptWorkers = [];
+
+            workCenter.workers.forEach((worker) => {
+                workCenter.totalWorkerFrames += 1;
                 if (worker.ticket) {
-                    const newTicket = {
-                        ...worker.ticket,
-                        endToEndTime: worker.ticket.endToEndTime + 1,
-                        touchTime: worker.ticket.touchTime + 1,
-                        queueTime: worker.ticket.queueTime,
-                        completion: {
-                          ...worker.ticket.completion,
-                          [workCenter.name]: worker.ticket.completion[workCenter.name] + workCenter.speed
-                        }
-                    };
+                    worker.ticket.endToEndTime += 1;
+                    worker.ticket.touchTime += 1;
+                    worker.ticket.completion[workCenter.name] += workCenter.speed;
 
-                    if (newTicket.completion[workCenter.name] >= 100) {
+                    if (worker.ticket.completion[workCenter.name] >= 100) {
                         if (workCenter.next) {
-                            transitioningTickets[workCenter.next].push(newTicket);
+                            transitioningTickets[workCenter.next].push(worker.ticket);
+                            worker.ticket = null;
+                            workCenter.completedTickets += 1;
+                            if (workCenter.next === "completed") {
+                                newState.totalCompleted += 1;
+                            }
                         }
-                        utilizedFrames += 1;
-                        return {
-                            ...worker,
-                            ticket: null,
-                        }
+                        workCenter.utilizedFrames += 1;
                     } else {
-                        utilizedFrames += 1;
-                        return {
-                            ...worker,
-                            ticket: newTicket,
-                        }
+                        workCenter.utilizedFrames += 1;
                     }
+                    keptWorkers.push(worker);
+
                 } else {
                     let nextWorkCenter = null;
                     if (workCenter.next) {
                         nextWorkCenter = _.find(newState.workCenters, {name: workCenter.next});
                     }
+                    const isNextWorkCenterReady = (nextWorkCenter && (!nextWorkCenter.active || nextWorkCenter.queuedTickets.length < 10));
 
-                    if (queuedTickets.length > 0 && (!workCenter.limitWIP || (nextWorkCenter && nextWorkCenter.queuedTickets.length < 10))) {
-                        const newTicket = queuedTickets.shift();
-                        utilizedFrames += 1;
-                        return {
-                            ...worker,
-                            ticket: newTicket
+                    if (workCenter.queuedTickets.length > 0) {
+                        if (workCenter.shiftResourcesTo && !isNextWorkCenterReady) {
+                            transitioningWorkers[workCenter.shiftResourcesTo].push(worker);
+                        } else if (!workCenter.limitWIP || isNextWorkCenterReady) {
+                            const newTicket = workCenter.queuedTickets.shift();
+                            workCenter.utilizedFrames += 1;
+                            worker.ticket = newTicket;
+                            keptWorkers.push(worker);
+                        } else {
+                            keptWorkers.push(worker);
                         }
                     } else {
-                        return {
-                            ...worker,
-                            ticket: null
+                        if (workCenter.shiftResourcesTo) {
+                            transitioningWorkers[workCenter.shiftResourcesTo].push(worker);
+                        } else {
+                            keptWorkers.push(worker);
                         }
                     }
                 }
+
+                workCenter.workers = keptWorkers;
             });
+        });
 
-            return {
-                ...workCenter,
-                queuedTickets,
-                workers,
-                utilizedFrames,
-                totalFrames,
+        // Handle tickets and workers that have been moved from other work centers
+        newState.workCenters.forEach((workCenter) => {
+            if (transitioningTickets[workCenter.name]) {
+                workCenter.queuedTickets = workCenter.queuedTickets.concat(transitioningTickets[workCenter.name]);
+            }
+            if (transitioningWorkers[workCenter.name]) {
+                workCenter.workers = workCenter.workers.concat(transitioningWorkers[workCenter.name]);
             }
         });
 
-        // Handle tickets that have been moved from a prior work center
-        newState.workCenters = newState.workCenters.map((workCenter) => {
-            return {
-                ...workCenter,
-                queuedTickets: [
-                    ...workCenter.queuedTickets,
-                    ...transitioningTickets[workCenter.name]
-                ]
-            }
-        });
-
-        newState.workCenters = newState.workCenters.map((workCenter) => {
+        newState.workCenters.forEach((workCenter) => {
             const queuedTickets = workCenter.queuedTickets;
 
             if (workCenter.createNew) {
@@ -361,11 +368,6 @@ class App extends React.Component{
                             completion: completion
                         });
                 }
-            }
-
-            return {
-                ...workCenter,
-                queuedTickets
             }
         });
 
@@ -475,6 +477,14 @@ class App extends React.Component{
                         onChange={(evt) => this.changeConfiguration({enableQA: evt.target.checked}) }
                     />
                 </FormGroup>
+                <FormGroup>
+                    <FormControlLabel
+                        className={"checkbox-control"}
+                        control={<Checkbox />}
+                        label="Shift Resources Between Teams"
+                        onChange={(evt) => this.changeConfiguration({shiftResources: evt.target.checked}) }
+                    />
+                </FormGroup>
             </div>
 
             <div className={"statistics-area"}>
@@ -486,6 +496,9 @@ class App extends React.Component{
 
                         return renderWorkCenterStatistics(workCenter, workCenterIndex);
                     })
+                }
+                {
+                    renderStatistics("End to End Throughput", this.state.totalCompleted / this.state.totalFrames, 2)
                 }
                 {
                     renderStatistics("End to End Time", this.computeAverageTicketStatistic('endToEndTime'))
