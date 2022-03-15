@@ -1,8 +1,8 @@
 import stickProgrammer from './stick-programmer.png';
 import './App.css';
 import React from "react";
-
-const frameRate = 25;
+import Slider from '@mui/material/Slider';
+import Box from '@mui/material/Box';
 
 function renderTicket(params) {
  return <div className={"ticket"} key={params.number}>
@@ -20,8 +20,9 @@ function renderTicket(params) {
                                   })}
                              />
                         </div>
-                 })
-             }
+                 }
+             )
+         }
      </div>
  </div>
 }
@@ -77,6 +78,12 @@ function renderWorkCenter(params, workCenterIndex) {
 
 
 
+function renderWorkCenterStatistics(params, workCenterIndex) {
+    return <div className={"single-statistic"} key={workCenterIndex}>
+        <span>{params.name} cumulative utilization rate</span>
+        <span>{(100 * params.utilizedFrames / params.totalFrames).toFixed(1)}</span>
+    </div>
+}
 
 
 
@@ -86,8 +93,34 @@ class App extends React.Component{
         workCenters: []
     };
 
+    defaultConfiguration = {
+        framerate: 10,
+        devs: 3,
+        qa: 3,
+        dev_randomness: 50,
+        qa_randomness: 50
+    }
+
     componentDidMount() {
+        this.resetConfiguration(this.defaultConfiguration)
+    }
+
+    resetConfiguration(config) {
+        let devWorkers = [];
+        for (let num = 0; num < config.devs; num += 1) {
+            devWorkers.push({
+                ticket: null,
+            });
+        }
+        let qaWorkers = [];
+        for (let num = 0; num < config.qa; num += 1) {
+            qaWorkers.push({
+                ticket: null,
+            });
+        }
+
         this.setState({
+            config,
             newTicketNumber: 0,
             workCenters: [
                 {
@@ -96,17 +129,9 @@ class App extends React.Component{
                     speed: 20,
                     createNew: true,
                     queuedTickets: [],
-                    workers: [
-                        {
-                            ticket: null,
-                        },
-                        {
-                            ticket: null
-                        },
-                        {
-                            ticket: null
-                        }
-                    ]
+                    workers: devWorkers,
+                    utilizedFrames: 1,
+                    totalFrames: 1
                 },
                 {
                     name: "qa",
@@ -114,17 +139,9 @@ class App extends React.Component{
                     speed: 20,
                     createNew: false,
                     queuedTickets: [],
-                    workers: [
-                        {
-                            ticket: null,
-                        },
-                        {
-                            ticket: null,
-                        },
-                        {
-                            ticket: null,
-                        }
-                    ]
+                    workers: qaWorkers,
+                    utilizedFrames: 1,
+                    totalFrames: 1
                 },
                 {
                     name: "completed",
@@ -132,19 +149,39 @@ class App extends React.Component{
                     speed: 0,
                     createNew: false,
                     queuedTickets: [],
-                    workers: []
+                    workers: [],
+                    utilizedFrames: 1,
+                    totalFrames: 1
                 }
             ]
         });
 
+        this.setFrameRate(this.state.frameRate ?? this.defaultConfiguration.framerate);
+    }
 
-        setInterval(() =>
+    changeConfiguration(newVals) {
+        const config = this.state.config;
+        Object.keys(newVals).forEach(key =>
+        {
+            config[key] = newVals[key];
+        });
+        this.resetConfiguration(config);
+    }
+
+    setFrameRate(frameRate) {
+        this.setState({
+            frameRate: frameRate
+        })
+
+        if (this.handler) {
+            clearInterval(this.handler);
+        }
+
+        this.handler = setInterval(() =>
         {
             this.doSimulationStep();
         }, Math.round(1000.0 / frameRate))
     }
-
-
 
     doSimulationStep() {
         const newState = {
@@ -160,8 +197,11 @@ class App extends React.Component{
 
         newState.workCenters = newState.workCenters.map((workCenter) => {
             const queuedTickets = workCenter.queuedTickets;
+            let utilizedFrames = workCenter.utilizedFrames;
+            let totalFrames = workCenter.totalFrames;
 
             const workers = workCenter.workers.map((worker) => {
+                totalFrames += 1;
                 if (worker.ticket) {
                     const newTicket = {
                         ...worker.ticket,
@@ -175,11 +215,13 @@ class App extends React.Component{
                         if (workCenter.next) {
                             transitioningTickets[workCenter.next].push(newTicket);
                         }
+                        utilizedFrames += 1;
                         return {
                             ...worker,
                             ticket: null,
                         }
                     } else {
+                        utilizedFrames += 1;
                         return {
                             ...worker,
                             ticket: newTicket,
@@ -188,6 +230,7 @@ class App extends React.Component{
                 } else {
                     if (queuedTickets.length > 0) {
                         const newTicket = queuedTickets.shift();
+                        utilizedFrames += 1;
                         return {
                             ...worker,
                             ticket: newTicket
@@ -205,6 +248,8 @@ class App extends React.Component{
                 ...workCenter,
                 queuedTickets,
                 workers,
+                utilizedFrames,
+                totalFrames,
             }
         });
 
@@ -229,8 +274,8 @@ class App extends React.Component{
                         {
                             number: `BAC-${newState.newTicketNumber}`,
                             completion: {
-                                dev: Math.round(Math.random() * 80),
-                                qa: Math.round(Math.random() * 80)
+                                dev: Math.round(50 + ((Math.random() - 0.5) * this.state.config["dev_randomness"])),
+                                qa: Math.round(50 + ((Math.random() - 0.5) * this.state.config["qa_randomness"]))
                             },
                         });
                 }
@@ -249,12 +294,83 @@ class App extends React.Component{
     render() {
     return (
         <div className="App">
+
+            <div className={"controls-area"}>
+                <Box width={300}>
+                    <span className={"slider-label"}>Speed</span>
+                    <Slider
+                        marks
+                        min={1}
+                        step={2}
+                        max={30}
+                        defaultValue={this.defaultConfiguration.framerate}
+                        aria-label="Speed" onChange={(evt) => this.setFrameRate(evt.target.value)}
+                    />
+                </Box>
+                <Box width={300}>
+                    <span className={"slider-label"}>Developers</span>
+                    <Slider
+                        marks
+                        min={1}
+                        step={1}
+                        max={4}
+                        defaultValue={this.defaultConfiguration.devs}
+                        aria-label="Developers" onChange={(evt) => this.changeConfiguration({devs: evt.target.value})}
+                    />
+                </Box>
+                <Box width={300}>
+                    <span className={"slider-label"}>QA People</span>
+                    <Slider
+                        marks
+                        min={1}
+                        step={1}
+                        max={4}
+                        defaultValue={this.defaultConfiguration.qa}
+                        aria-label="QA People" onChange={(evt) => this.changeConfiguration({qa: evt.target.value})}
+                    />
+                </Box>
+                <Box width={300}>
+                    <span className={"slider-label"}>Dev Randomness</span>
+                    <Slider
+                        marks
+                        min={0}
+                        step={10}
+                        max={100}
+                        defaultValue={this.defaultConfiguration.dev_randomness}
+                        aria-label="Randomness" onChange={(evt) => this.changeConfiguration({dev_randomness: evt.target.value})}
+                    />
+                </Box>
+                <Box width={300}>
+                    <span className={"slider-label"}>QA Randomness</span>
+                    <Slider
+                        marks
+                        min={0}
+                        step={10}
+                        max={100}
+                        defaultValue={this.defaultConfiguration.qa_randomness}
+                        aria-label="Randomness" onChange={(evt) => this.changeConfiguration({qa_randomness: evt.target.value})}
+                    />
+                </Box>
+            </div>
+
             <div className={"work-centers-area"}>
                 {
                     this.state.workCenters.map((workCenter, workCenterIndex) => {
                         return renderWorkCenter(workCenter, workCenterIndex);
                     })
                 }
+            </div>
+
+            <div className={"statistics-area"}>
+                    {
+                        this.state.workCenters.map((workCenter, workCenterIndex) => {
+                            if (!workCenter.speed) {
+                                return null;
+                            }
+
+                            return renderWorkCenterStatistics(workCenter, workCenterIndex);
+                        })
+                    }
             </div>
         </div>
     );
