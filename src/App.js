@@ -77,12 +77,16 @@ function renderWorkCenter(params, workCenterIndex) {
 }
 
 
-
-function renderWorkCenterStatistics(params, workCenterIndex) {
-    return <div className={"single-statistic"} key={workCenterIndex}>
-        <span>{params.name} cumulative utilization rate</span>
-        <span>{(100 * params.utilizedFrames / params.totalFrames).toFixed(1)}</span>
+function renderStatistics(title, value) {
+    return <div className={"single-statistic"} key={title}>
+        <span>{title}</span>
+        <span>{value ? value.toFixed(1) : null}</span>
     </div>
+}
+
+
+function renderWorkCenterStatistics(params) {
+    return renderStatistics(`${params.name} cumulative utilization rate`, (100 * params.utilizedFrames / params.totalFrames));
 }
 
 
@@ -128,6 +132,7 @@ class App extends React.Component{
                     next: "qa",
                     speed: 20,
                     createNew: true,
+                    active: true,
                     queuedTickets: [],
                     workers: devWorkers,
                     utilizedFrames: 1,
@@ -138,6 +143,7 @@ class App extends React.Component{
                     next: "completed",
                     speed: 20,
                     createNew: false,
+                    active: true,
                     queuedTickets: [],
                     workers: qaWorkers,
                     utilizedFrames: 1,
@@ -148,6 +154,7 @@ class App extends React.Component{
                     next: null,
                     speed: 0,
                     createNew: false,
+                    active: false,
                     queuedTickets: [],
                     workers: [],
                     utilizedFrames: 1,
@@ -194,8 +201,28 @@ class App extends React.Component{
             transitioningTickets[workCenter.name] = [];
         });
 
+        // Increase lead time on all queued tickets
+        newState.workCenters = newState.workCenters.map((workCenter) => {
+            if (!workCenter.active) {
+                return workCenter;
+            }
+
+            return {
+                ...workCenter,
+                queuedTickets: workCenter.queuedTickets.map((ticket) => {
+                    return {
+                        ...ticket,
+                        leadTime: ticket.leadTime + 1
+                    }
+                })
+            }
+        });
 
         newState.workCenters = newState.workCenters.map((workCenter) => {
+            if (!workCenter.active) {
+                return workCenter;
+            }
+
             const queuedTickets = workCenter.queuedTickets;
             let utilizedFrames = workCenter.utilizedFrames;
             let totalFrames = workCenter.totalFrames;
@@ -205,6 +232,7 @@ class App extends React.Component{
                 if (worker.ticket) {
                     const newTicket = {
                         ...worker.ticket,
+                        leadTime: worker.ticket.leadTime + 1,
                         completion: {
                           ...worker.ticket.completion,
                           [workCenter.name]: worker.ticket.completion[workCenter.name] + workCenter.speed
@@ -273,6 +301,7 @@ class App extends React.Component{
                     queuedTickets.push(
                         {
                             number: `BAC-${newState.newTicketNumber}`,
+                            leadTime: 0,
                             completion: {
                                 dev: Math.round(50 + ((Math.random() - 0.5) * this.state.config["dev_randomness"])),
                                 qa: Math.round(50 + ((Math.random() - 0.5) * this.state.config["qa_randomness"]))
@@ -290,6 +319,32 @@ class App extends React.Component{
         this.setState(newState);
     }
 
+    computeLeadTimeStatistic() {
+        let total = 0;
+        let count = 0;
+        let completedWorkCenter = null;
+        for (let workCenter of this.state.workCenters) {
+            if (workCenter.name === "completed") {
+                completedWorkCenter = workCenter;
+                break;
+            }
+        }
+        if (completedWorkCenter === null) {
+            return null;
+        }
+
+        for (let x = 0; x < Math.min(completedWorkCenter.queuedTickets.length, 25); x += 1) {
+            const ticket = completedWorkCenter.queuedTickets[completedWorkCenter.queuedTickets.length - (x + 1)];
+            total += ticket.leadTime;
+            count += 1;
+        }
+        if (count > 0) {
+            return total / count;
+        } else {
+            return null;
+        }
+    }
+
 
     render() {
     return (
@@ -302,7 +357,7 @@ class App extends React.Component{
                         marks
                         min={1}
                         step={2}
-                        max={30}
+                        max={50}
                         defaultValue={this.defaultConfiguration.framerate}
                         aria-label="Speed" onChange={(evt) => this.setFrameRate(evt.target.value)}
                     />
@@ -370,6 +425,9 @@ class App extends React.Component{
 
                             return renderWorkCenterStatistics(workCenter, workCenterIndex);
                         })
+                    }
+                    {
+                        renderStatistics("Lead Time", this.computeLeadTimeStatistic())
                     }
             </div>
         </div>

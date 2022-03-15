@@ -48,7 +48,7 @@ body {
 {
   display: flex;
   flex-direction: column;
-  min-width: 135px;
+  min-width: 150px;
 }
 
 .worker-center-queue-title {
