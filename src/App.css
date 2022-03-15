@@ -38,6 +38,10 @@ body {
   padding: 3px;
 }
 
+.work-center-label {
+  color: white;
+}
+
 .work-center-body
 {
   display: flex;
@@ -68,7 +72,6 @@ body {
 .work-center-workers {
   display: flex;
   flex-direction: column;
-  margin: 20px;
 }
 
 .worker-center-workers-title {
@@ -79,6 +82,7 @@ body {
 
 .worker-box {
   position: relative;
+  margin: 20px;
 }
 
 .worker-ticket-box {

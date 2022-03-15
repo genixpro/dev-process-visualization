@@ -42,6 +42,7 @@ function renderWorkCenter(params, workCenterIndex) {
             </div>
             <div className={"work-center-body"}>
                 <div className={"work-center-queue"}>
+                    {params.queueName ? <span className={"work-center-label"}>{params.queueName}</span> : null}
                     { params.queuedTickets.slice(0, maxQueueLengthToDisplay).map((ticket) => renderTicket(ticket)) }
                     {
                         params.queuedTickets.length > maxQueueLengthToDisplay ?
@@ -50,6 +51,7 @@ function renderWorkCenter(params, workCenterIndex) {
                     }
                 </div>
                 <div className={"work-center-workers"}>
+                    {params.workerName ? <span className={"work-center-label"}>{params.workerName}</span> : null}
                     {
                         params.workers.map((worker, workerIndex) => {
                             return <div className={"worker-box"}
@@ -85,7 +87,7 @@ function renderWorkCenter(params, workCenterIndex) {
 function renderStatistics(title, value, digits) {
     return <div className={"single-statistic"} key={title}>
         <span>{title}</span>
-        <span>{value ? value.toFixed(digits ?? 1) : null}</span>
+        <span>{value ? value.toFixed(digits ?? 1) : "n/a"}</span>
     </div>
 }
 
@@ -103,12 +105,12 @@ class App extends React.Component{
     };
 
     defaultConfiguration = {
-        framerate: 10,
+        framerate: 5,
         limitWIP: false,
         devs: 3,
         qa: 3,
-        dev_randomness: 50,
-        qa_randomness: 50,
+        dev_randomness: 90,
+        qa_randomness: 90,
         enableQA: true,
     }
 
@@ -132,6 +134,8 @@ class App extends React.Component{
         let devWorkCenter = {
             name: "dev",
             next: "qa",
+            queueName: "backlog",
+            workerName: "developers",
             speed: 10,
             createNew: true,
             active: true,
@@ -144,6 +148,8 @@ class App extends React.Component{
         let qaWorkCenter = {
             name: "qa",
             next: "completed",
+            queueName: "testing queue",
+            workerName: "qa team",
             speed: 10,
             createNew: false,
             active: true,
@@ -156,6 +162,8 @@ class App extends React.Component{
         let completedWorkCenter = {
             name: "completed",
             next: null,
+            queueName: "completed tickets",
+            workerName: "",
             speed: 0,
             createNew: false,
             active: false,
@@ -469,24 +477,16 @@ class App extends React.Component{
                 </FormGroup>
             </div>
 
-            <div className={"work-centers-area"}>
+            <div className={"statistics-area"}>
                 {
                     this.state.workCenters.map((workCenter, workCenterIndex) => {
-                        return renderWorkCenter(workCenter, workCenterIndex);
+                        if (!workCenter.speed) {
+                            return null;
+                        }
+
+                        return renderWorkCenterStatistics(workCenter, workCenterIndex);
                     })
                 }
-            </div>
-
-            <div className={"statistics-area"}>
-                    {
-                        this.state.workCenters.map((workCenter, workCenterIndex) => {
-                            if (!workCenter.speed) {
-                                return null;
-                            }
-
-                            return renderWorkCenterStatistics(workCenter, workCenterIndex);
-                        })
-                    }
                 {
                     renderStatistics("End to End Time", this.computeAverageTicketStatistic('endToEndTime'))
                 }
@@ -500,6 +500,15 @@ class App extends React.Component{
                     renderStatistics("Queue Time", this.computeAverageTicketStatistic('queueTime'))
                 }
             </div>
+
+            <div className={"work-centers-area"}>
+                {
+                    this.state.workCenters.map((workCenter, workCenterIndex) => {
+                        return renderWorkCenter(workCenter, workCenterIndex);
+                    })
+                }
+            </div>
+
         </div>
     );
   }
